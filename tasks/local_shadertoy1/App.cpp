@@ -99,7 +99,6 @@ App::App()
   //   Потому имя должно совпадать с тем, что выше, наверно.
 
 
-  // Начнем с того, что попробуем все залить одним цветом. Уровень 1, так сказать.
   // Мы не можем просто в картинку vk::Image backbuffer, которая дала нам ОС, писать
   //   на видеокарте. Нам нужно создать еще один картинку, ее заполнять. А потом
   //   скопировать в исходную картинку backbuffer.
@@ -224,15 +223,23 @@ void App::drawFrame()
         vk::ImageAspectFlagBits::eColor
       );
 
-      // Нужно поставить flush в очередь команд, чтобы последующие команды увидели, видимо.
-      etna::flush_barriers(currentCmdBuf);
-
       // Закидываем еще параметры, которые обычно проставляет shadertoy.
+      static const std::chrono::time_point initial_time = std::chrono::high_resolution_clock::now();
+      std::chrono::time_point now = std::chrono::high_resolution_clock::now();
+      auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(initial_time - now);
       struct {
         uint32_t resolution_x;
         uint32_t resolution_y;
-      } parameters = {static_cast<uint32_t>(resolution.x), static_cast<uint32_t>(resolution.y)};
+        float time;
+      } parameters = {
+        static_cast<uint32_t>(resolution.x),
+        static_cast<uint32_t>(resolution.y),
+        static_cast<float>(duration.count() / 1000.0)
+      };
       currentCmdBuf.pushConstants(pipeline.getVkPipelineLayout(), vk::ShaderStageFlagBits::eCompute, 0, sizeof(parameters), &parameters);
+
+      // Нужно поставить flush в очередь команд, чтобы последующие команды увидели, видимо.
+      etna::flush_barriers(currentCmdBuf);
 
       // Даем команду выполнить шейдер (pipeline в терминах vulkan).
       //   Вот выше не зря сделали барьер, теперь эта команда увидит команды до нее..
@@ -247,11 +254,23 @@ void App::drawFrame()
       etna::set_state(
         currentCmdBuf,
         tmp_image.get(),
-        vk::PipelineStageFlagBits2::eTransfer,
+        vk::PipelineStageFlagBits2::eBlit,
         vk::AccessFlagBits2::eTransferRead,
         vk::ImageLayout::eTransferSrcOptimal,
         vk::ImageAspectFlagBits::eColor
       );
+
+      // Опять делаем flush, чтобы не смотреть на спам в логах, что layout
+      //   не совпадает с тем, который был замечен у картинки в последний раз.
+      //   Мы не сделали барьер на очереди команд, потому изменения и не заметны..
+      etna::flush_barriers(currentCmdBuf);
+
+      vk::ImageBlit region = {
+          .srcSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
+          .srcOffsets     = {{vk::Offset3D(0, 0, 0), vk::Offset3D(resolution.x, resolution.y, 1)}},
+          .dstSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
+          .dstOffsets     = {{vk::Offset3D(0, 0, 0), vk::Offset3D(resolution.x, resolution.y, 1)}},
+      };
 
       currentCmdBuf.blitImage(
         tmp_image.get(),
@@ -259,7 +278,7 @@ void App::drawFrame()
         backbuffer,
         vk::ImageLayout::eTransferDstOptimal,
         1,
-        nullptr,
+        &region,
         vk::Filter::eLinear
       );
 

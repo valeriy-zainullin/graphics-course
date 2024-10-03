@@ -8,10 +8,11 @@ layout(push_constant)       uniform Parameters {
   //   https://www.khronos.org/opengl/wiki/Data_Type_(GLSL)#Scalars
   uint iResolution_x;
   uint iResolution_y;
+  float time;
 } parameters;
 
-const float iTime = 5.0;
-vec2        iResolution;
+float iTime;
+vec2  iResolution;
 
 const vec3  eye      = vec3 ( 0, 0, 5 );
 const vec3  light    = vec3  ( 0.0, 3.0, 5.0 );
@@ -304,7 +305,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     //   синуса все так же будут пробегаться (все бы, почти все,
     //   пробегались, если бы была формула pi * mouse.y).
     //mouse.y += pi / 6.0; // Повернем кружку дном вниз :)
-    vec3 mouse = vec3(0, 0, 0);
+    vec3 mouse = vec3(sin(iTime) / 2.0, -0.4, 0);
     mat3 m     = rotateX ( 6.0*mouse.y ) * rotateY ( 6.0*mouse.x);
     vec2 scale = 9.0 * iResolution.xy / max ( iResolution.x, iResolution.y ) ;
      vec2 uv    = scale * ( fragCoord/iResolution.xy - vec2 ( 0.5 ) );
@@ -336,6 +337,7 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
 void main()
 {
   iResolution = vec2(parameters.iResolution_x, parameters.iResolution_y);
+  iTime = parameters.time;
 
   vec4 fragColor;
   vec2  fragCoord  = vec2(gl_GlobalInvocationID.xy);
