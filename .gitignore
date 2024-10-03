@@ -1,6 +1,7 @@
 bin
 out
 build
+build_vscode
 external
 .vs
 .cache

@@ -3,6 +3,7 @@
 #include <etna/Etna.hpp>
 #include <etna/GlobalContext.hpp>
 #include <etna/PipelineManager.hpp>
+#include <etna/Sampler.hpp>
 
 
 App::App()
@@ -69,12 +70,53 @@ App::App()
     resolution = {w, h};
   }
 
+  etna::GlobalContext& context = etna::get_context();
+
   // Next, we need a magical Etna helper to send commands to the GPU.
   // How it is actually performed is not trivial, but we can skip this for now.
-  commandManager = etna::get_context().createPerFrameCmdMgr();
+  commandManager = context.createPerFrameCmdMgr();
 
 
   // TODO: Initialize any additional resources you require here!
+
+  // Многое будет из лекции, просто чуть-чуть постараюсь объяснить по-своему.
+
+  // Думаю, здесь загружается файл со spirv-байткодом для GPU. Этот кроссплатформенный и
+  //   кроссвендорный байткод затем компилируется под видеокарту.
+  etna::create_program("local_shadertoy", {LOCAL_SHADERTOY_SHADERS_ROOT "toy.comp.spv"});
+
+  // Команды GPU будут, чтобы записать массивы или загрузить нашу программу. Они попадают в очередь
+  //   vk::CommandBuffer cmd_buf внутри etnf, видимо. GPU c ними взаимодействует. Он может проставлять
+  //   им флаги всякие (сказали в лекции).
+  // Pipeline для нас синоним шейдера.
+  // Eсть шейдер -- программа, но просьбу исполнять мы еще не создали. Создадим позже.
+  //   Эти операции внутри command buffer как раз для этого. А так же у нас могут быть
+  //   массивы внутри шейдера, в которые мы хотим передать данные, как в примере
+  //   samples/simple_compute. Мы еще сможем записать в эти массивы данные.
+
+  pipeline = context.getPipelineManager().createComputePipeline("local_shadertoy", {});
+  // Я зашел внутрь в vs code, у нас есть там некоторый shader manager, он ищет шейдер.
+  //   Потому имя должно совпадать с тем, что выше, наверно.
+
+
+  // Мы не можем просто в картинку vk::Image backbuffer, которая дала нам ОС, писать
+  //   на видеокарте. Нам нужно создать еще один картинку, ее заполнять. А потом
+  //   скопировать в исходную картинку backbuffer.
+  //   Картинку backbuffer дает нам операционная система. И напрямую туда нельзя писать,
+  //   сделано ради безопасности. А на некоторых ОС можно. Потому решили не ломать
+  //   домашку у половины студентов :)
+  // Возможно, дело в том, что в зависимости от ОС может быть разный порядок пикселей.
+  //   Т.к. у вулкана много разных порядков пикселей можно выбрать, показывали на лекции.
+  //   И чтобы кашу пользователь не видел с перемешанными пикселями на некоторых запретили..
+
+  tmp_image = context.createImage(etna::Image::CreateInfo {
+    .extent     = vk::Extent3D { resolution.x, resolution.y, 1},
+    .name       = "image", // Интересно, что это за имя, кто по этому имени называет.
+    .format     = vk::Format::eR8G8B8A8Snorm,
+    .imageUsage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc
+  });
+
+  sampler = etna::Sampler(etna::Sampler::CreateInfo{.name = "sampler"});
 }
 
 App::~App()
@@ -138,7 +180,107 @@ void App::drawFrame()
       etna::flush_barriers(currentCmdBuf);
 
 
-      // TODO: Record your commands here!
+      // Здесь мы узнаем, какие привязки (bindings) ожидает шейдер. Он ожидает всякие массивы, которые
+      //   мы объявляем в коде шейдера в директивах layout. Там как раз указывают номер binding-а
+      //   layout(std30, binding = 0) buffer a { float A[]; }, например.
+      etna::ShaderProgramInfo shaderComputeInfo = etna::get_shader_program("local_shadertoy");
+
+      // Привязываем всякие данные, они попадут в шейдер.
+      etna::DescriptorSet set = etna::create_descriptor_set(
+        shaderComputeInfo.getDescriptorLayoutId(0),
+        currentCmdBuf,
+        {
+          etna::Binding{0, tmp_image.genBinding(sampler.get(), vk::ImageLayout::eGeneral)},
+        }
+      );
+      vk::DescriptorSet vkSet = set.getVkSet(); // Сделали из декрипторов etna дескрипторы вулкана.
+
+      // https://vkguide.dev/docs/chapter-4/descriptors/
+
+      // Закидываем на исполнение в очередь команд наш шейдер.
+      currentCmdBuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline.getVkPipeline());
+      // Указываем, какие данные шейдеру нужны (наши привязки, которые подготовили).
+      // VULKAN_HPP_INLINE void CommandBuffer::bindDescriptorSets( VULKAN_HPP_NAMESPACE::PipelineBindPoint     pipelineBindPoint,
+      //                                                           VULKAN_HPP_NAMESPACE::PipelineLayout        layout,
+      //                                                           uint32_t                                    firstSet,
+      //                                                           uint32_t                                    descriptorSetCount,
+      //                                                           const VULKAN_HPP_NAMESPACE::DescriptorSet * pDescriptorSets,
+      //                                                           uint32_t                                    dynamicOffsetCount,
+      //                                                           const uint32_t *                            pDynamicOffsets,
+      //                                                           Dispatch const &                            d ) const VULKAN_HPP_NOEXCEPT
+      // Говорим, что хотим посчитать, шейдер на посчитать сделали. Даем наш шейдер. Говорим, сколько привязок, кидаем сами привязки.
+      //   Про никакие оффсеты ничего не знаем. Типо так..
+      currentCmdBuf.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipeline.getVkPipelineLayout(), 0, 1, &vkSet, 0, nullptr);
+
+      // Проставляем картинке права доступа, что в нее можно и нужно писать.
+      //   И заодно ставим порядок пикселей (layout) самый стандартный.
+      etna::set_state(
+        currentCmdBuf,
+        tmp_image.get(),
+        vk::PipelineStageFlagBits2::eComputeShader,
+        vk::AccessFlagBits2::eShaderWrite,
+        vk::ImageLayout::eGeneral,
+        vk::ImageAspectFlagBits::eColor
+      );
+
+      // Закидываем еще параметры, которые обычно проставляет shadertoy.
+      static const std::chrono::time_point initial_time = std::chrono::high_resolution_clock::now();
+      std::chrono::time_point now = std::chrono::high_resolution_clock::now();
+      auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(initial_time - now);
+      struct {
+        uint32_t resolution_x;
+        uint32_t resolution_y;
+        float time;
+      } parameters = {
+        static_cast<uint32_t>(resolution.x),
+        static_cast<uint32_t>(resolution.y),
+        static_cast<float>(duration.count() / 1000.0)
+      };
+      currentCmdBuf.pushConstants(pipeline.getVkPipelineLayout(), vk::ShaderStageFlagBits::eCompute, 0, sizeof(parameters), &parameters);
+
+      // Нужно поставить flush в очередь команд, чтобы последующие команды увидели, видимо.
+      etna::flush_barriers(currentCmdBuf);
+
+      // Даем команду выполнить шейдер (pipeline в терминах vulkan).
+      //   Вот выше не зря сделали барьер, теперь эта команда увидит команды до нее..
+      currentCmdBuf.dispatch(resolution.x / 32, resolution.y / 32, 1);
+
+      // Будем надеяться, что посчиталось. Теперь надо перегнать кадр из временной
+      //   картинки в тот буфер, который дала ОС.
+
+      // Изменим права доступа к кадру, что теперь он подлежит передаче из видеокарты
+      //   обратно в оперативную память. И изменим layout его пикселей на оптимальный
+      //   для передачи.
+      etna::set_state(
+        currentCmdBuf,
+        tmp_image.get(),
+        vk::PipelineStageFlagBits2::eBlit,
+        vk::AccessFlagBits2::eTransferRead,
+        vk::ImageLayout::eTransferSrcOptimal,
+        vk::ImageAspectFlagBits::eColor
+      );
+
+      // Опять делаем flush, чтобы не смотреть на спам в логах, что layout
+      //   не совпадает с тем, который был замечен у картинки в последний раз.
+      //   Мы не сделали барьер на очереди команд, потому изменения и не заметны..
+      etna::flush_barriers(currentCmdBuf);
+
+      vk::ImageBlit region = {
+          .srcSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
+          .srcOffsets     = {{vk::Offset3D(0, 0, 0), vk::Offset3D(resolution.x, resolution.y, 1)}},
+          .dstSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
+          .dstOffsets     = {{vk::Offset3D(0, 0, 0), vk::Offset3D(resolution.x, resolution.y, 1)}},
+      };
+
+      currentCmdBuf.blitImage(
+        tmp_image.get(),
+        vk::ImageLayout::eTransferSrcOptimal,
+        backbuffer,
+        vk::ImageLayout::eTransferDstOptimal,
+        1,
+        &region,
+        vk::Filter::eLinear
+      );
 
 
       // At the end of "rendering", we are required to change how the pixels of the
