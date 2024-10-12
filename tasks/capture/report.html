@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/4.0.0/github-markdown.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release/build/styles/default.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex/dist/katex.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/markdown-it-texmath/css/texmath.min.css">
+<link rel="stylesheet" href="file:////home/user/.vscode-server/extensions/goessner.mdmath-2.7.4/themes/default/style.css">
+
+</head>
+<body class="markdown-body">
+<h1 dir="auto" id="%D0%B8%D0%B3%D1%80%D0%B0-raft">Игра &quot;Raft&quot;</h1>
+<h2 dir="auto" id="%D0%B0%D0%BD%D0%B0%D0%BB%D0%B8%D0%B7%D0%B8%D1%80%D1%83%D0%B5%D0%BC%D1%8B%D0%B9-%D0%BA%D0%B0%D0%B4%D1%80">Анализируемый кадр</h2>
+<p dir="auto"><img src="frame.png" alt="Кадр" data-src="frame.png"></p>
+<h2 dir="auto" id="%D0%B2%D0%B8%D0%B4-%D0%B2-renderdoc">Вид в renderdoc</h2>
+<p dir="auto"><img src="screenshot.png" alt="Снимок экрана" data-src="screenshot.png"></p>
+<h2 dir="auto" id="%D0%BF%D1%80%D0%BE%D1%86%D0%B5%D1%81%D1%81-%D0%BF%D0%BE%D1%81%D1%82%D1%80%D0%BE%D0%B5%D0%BD%D0%B8%D1%8F-%D0%BA%D0%B0%D0%B4%D1%80%D0%B0">Процесс построения кадра</h2>
+<p dir="auto">Не все именно в таком порядке, некоторые этапы вычисления вида объектов перемешаны.</p>
+<h3 dir="auto" id="1-%D1%81%D0%BE%D0%B7%D0%B4%D0%B0%D0%BD%D0%B8%D0%B5-%D0%B2%D0%B8%D0%B4%D0%B0-%D0%BC%D0%BE%D1%80%D1%8F">1. Создание вида моря</h3>
+<p dir="auto">Создается море, с волнами. Волны просчитываются с помощью FFT по всей видимости: в пояснении к кадру есть WavesRendererFFT (видимо, какой-то встроенный механизм directx11...) и WavesDisplacementMap -- карта расположения волн в переводе на русский.</p>
+<p dir="auto"><img src="screenshot-water-1.png" alt="Карта шума для волн" data-src="screenshot-water-1.png"></p>
+<p dir="auto">След на воде от движения плота.</p>
+<p dir="auto"><img src="screenshot-water-1,5.png" alt="След от движения плота.
+" data-src="screenshot-water-1,5.png"></p>
+<p dir="auto">Промужеточный этап выглядит так.</p>
+<p dir="auto"><img src="screenshot-water-2.png" alt="Промежуточный этап" data-src="screenshot-water-2.png"></p>
+<p dir="auto">Через несколько шагов, когда будет инструмент и плот, все будет выглядеть так. Странно, почему этот вид (сцена) стоит сразу после следа плота в списке событий..</p>
+<p dir="auto">Видимо, мы в renderdoc самое последнее состояние этой картинки. Т.к. не создавалась промежуточная, а перезаписывалась уже существующая.</p>
+<p dir="auto"><img src="screenshot-water-3.png" alt="Результат сведения" data-src="screenshot-water-3.png"></p>
+<h3 dir="auto" id="2-%D0%BF%D0%BB%D0%BE%D1%82-%D0%B8-%D0%BC%D1%83%D1%81%D0%BE%D1%80">2. Плот и мусор</h3>
+<p dir="auto">Текстура плавающих объектов. Они считаются внутри прохода обработки colour pass #6 (pass). Можно пройтись по командам внутри пасса и увидеть, как объекты появляются один за одним! <br>
+<img src="screenshot-floating-1.png" alt="Текстуры объектов" data-src="screenshot-floating-1.png"></p>
+<h3 dir="auto" id="3-%D1%81%D0%BE%D0%B7%D0%B4%D0%B0%D0%BD%D0%B8%D0%B5-%D0%B2%D0%B8%D0%B4%D0%B0-%D0%BD%D0%B5%D0%B1%D0%B0-%D0%B8-%D0%BE%D0%B1%D0%BB%D0%B0%D0%BA%D0%BE%D0%B2">3. Создание вида неба и облаков</h3>
+<p dir="auto"><img src="screenshot-clouds-1.png" alt="Карта шума для облаков" data-src="screenshot-clouds-1.png"></p>
+<p dir="auto"><code>CloudNoise</code> -- все понятно: шум, из которого будут созданы облака. :)</p>
+<p dir="auto">Хотел собрать еще скриншотов, но второй раз не смог найти в event browser.. Хотя такой этап, по всей видимости, есть.</p>
+<h3 dir="auto" id="4-%D0%BA%D0%B0%D1%80%D1%82%D0%B0-%D0%BD%D0%BE%D1%80%D0%BC%D0%B0%D0%BB%D0%B5%D0%B9">4. Карта нормалей</h3>
+<p dir="auto">Видел в dota 2 такой эффект, как карта нормалей. Его можно включить и выключить. Но теперь мы это видим и в renderdoc. Пока не знаю, что это такое. <br>
+<img src="screenshot-normals.png" alt="Карта нормалей" data-src="screenshot-normals.png"></p>
+<h3 dir="auto" id="5-%D0%BD%D0%B0%D0%BB%D0%BE%D0%B6%D0%B5%D0%BD%D0%B8%D0%B5-%D1%82%D0%B5%D0%BA%D1%81%D1%82%D1%83%D1%80%D1%8B-%D0%BD%D0%B0-%D0%B8%D0%BD%D1%81%D1%82%D1%80%D1%83%D0%BC%D0%B5%D0%BD%D1%82-%D0%BA%D1%80%D1%8E%D0%BA-%D0%B2-%D0%BD%D0%B0%D1%88%D0%B5%D0%BC-%D1%81%D0%BB%D1%83%D1%87%D0%B0%D0%B5">5. Наложение текстуры на инструмент (крюк в нашем случае)</h3>
+<p dir="auto">Где-то до этого считалось его положение. Выглядело это как черное на черном, вычислялся именно сам объект. А теперь происходит &quot;разукрашивание&quot; в виде наложения такой текстуры. На втором вводе видна карта, какие участки текстуры будут выбраны.</p>
+<p dir="auto">Текстура крюка. <br>
+<img src="screenshot-tool-1.png" alt="Текстура крюка" data-src="screenshot-tool-1.png"></p>
+<p dir="auto">Готовый крюк. <br>
+<img src="screenshot-tool-2.png" alt="Готовый крюк" data-src="screenshot-tool-2.png"></p>
+<h3 dir="auto" id="6-%D1%81%D0%B2%D0%B5%D0%B4%D0%B5%D0%BD%D0%B8%D0%B5-%D0%B2-%D0%BE%D0%B4%D0%B8%D0%BD-%D0%BA%D0%B0%D0%B4%D1%80">6. Сведение в один кадр</h3>
+<p dir="auto">Весь кадр. <br>
+<img src="screenshot-present.png" alt="Весь кадр" data-src="screenshot-present.png"></p>
+<h2 dir="auto" id="%D0%B4%D1%80%D1%83%D0%B3%D0%B0%D1%8F-%D0%B8%D0%BD%D1%84%D0%BE%D1%80%D0%BC%D0%B0%D1%86%D0%B8%D1%8F">Другая информация</h2>
+<p dir="auto">Шейдеры не удалось найти в захвате. Возможно, дело в том, что игра использовала directx11, а не vulkan..</p>
+<p dir="auto">Не особо понятно, в каком порядке идут события. Возможно, дело в том, что они происходят параллельно. А мы их пытаемся записать в одну последовательность. Так мы можем увидеть лишь отношения зависимостей: то, что требуется для операции, должно быть получено ранее.</p>
+<p dir="auto">Если вдруг недостаточно глубокий анализ, скажите мне, постараюсь обратить внимание на то, что вам интересно.</p>
+<p dir="auto">TG: <a href="https://t.me/valeriy_zainullin">https://t.me/valeriy_zainullin</a></p>
+
+</body>
+</html>
