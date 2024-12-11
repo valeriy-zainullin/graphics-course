@@ -4,6 +4,7 @@
 #include <etna/PerFrameCmdMgr.hpp>
 #include <etna/ComputePipeline.hpp>
 #include <etna/Image.hpp>
+#include <etna/Sampler.hpp>
 
 #include "wsi/OsWindowingManager.hpp"
 
@@ -28,4 +29,9 @@ private:
 
   std::unique_ptr<etna::Window> vkWindow;
   std::unique_ptr<etna::PerFrameCmdMgr> commandManager;
+
+  // Добавленные поля.
+  etna::ComputePipeline pipeline;
+  etna::Image   tmp_image;
+  etna::Sampler sampler;
 };
